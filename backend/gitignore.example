@@ -1,0 +1,18 @@
+# เปลี่ยนชื่อไฟล์นี้เป็น .gitignore แล้ววางไว้ที่โฟลเดอร์รากของโปรเจกต์
+
+# ความลับ
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Log และไฟล์ระบบ
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# ไฟล์ที่อัปโหลด (เตรียมไว้สำหรับขั้นที่ 4)
+uploads/
