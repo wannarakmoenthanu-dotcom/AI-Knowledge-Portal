@@ -350,7 +350,7 @@
                 <path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
               </svg>
             </button>
-            <button class="send-btn" title="ส่ง" onclick="sendMsg()">
+            <button class="send-btn" id="sendBtn" title="ส่ง">
               <svg width="19" height="19" viewBox="0 0 24 24" fill="#f6e7c8" stroke="#f6e7c8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>
               </svg>
@@ -363,76 +363,73 @@
 </div>
 
 <script>
-  // ---------- แสดงข้อความในกล่องแชท ----------
-  function addChatMessage(text, sender) {
+  
+function addChatMessage(text, sender) {
     const chat = document.getElementById('chatMessages');
+
     const message = document.createElement('div');
     message.className = 'chat-message ' + sender;
+
     // ใช้ textContent เพื่อป้องกันการแทรก HTML ที่ไม่ปลอดภัย
     message.textContent = text;
+
     chat.appendChild(message);
     chat.scrollTop = chat.scrollHeight;
-    return message;
-  }
+}
 
-  // เรียก API ผ่าน path แบบ relative (ใช้ได้ทั้ง localhost และตอนขึ้นระบบจริง)
-  const API_URL = '/api/questions';
-  let isSending = false;
-
-  async function sendMsg() {
-    if (isSending) return; // กันกดซ้ำระหว่างรอคำตอบ
-
+document.getElementById('sendBtn')
+    .addEventListener('click', sendMsg);
+async function sendMsg() {
     const inp = document.getElementById('chatInput');
-    const sendBtn = document.querySelector('.send-btn');
     const question = inp.value.trim();
 
     if (!question) {
-      alert('กรุณาพิมพ์คำถามก่อน');
-      return;
+        alert('กรุณาพิมพ์คำถามก่อน');
+        return;
     }
 
-    isSending = true;
-    sendBtn.disabled = true;
-    sendBtn.style.opacity = '0.5';
-
+    // แสดงคำถามของผู้ใช้
     addChatMessage(question, 'user');
     inp.value = '';
-    const loadingMessage = addChatMessage('กำลังประมวลผล...', 'ai');
+
+    // แสดงสถานะระหว่างรอ
+    addChatMessage('กำลังประมวลผล...', 'ai');
+
+    const chat = document.getElementById('chatMessages');
+    const loadingMessage = chat.lastElementChild;
 
     try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question_text: question })
-      });
+        const response = await fetch(
+            'http://localhost:3000/api/questions',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    question_text: question
+                })
+            }
+        );
 
-      let data = {};
-      try { data = await response.json(); } catch (e) { /* ตอบกลับไม่ใช่ JSON */ }
+        const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'เกิดข้อผิดพลาด (' + response.status + ')');
-      }
+        if (!response.ok) {
+            throw new Error(data.error || 'เกิดข้อผิดพลาด');
+        }
 
-      loadingMessage.textContent = data.answer_text;
+        // เปลี่ยนข้อความกำลังประมวลผลเป็นคำตอบ
+        loadingMessage.textContent = data.answer_text;
+
     } catch (error) {
-      console.error(error);
-      loadingMessage.textContent = 'ไม่สามารถเชื่อมต่อ Backend ได้: ' + error.message;
-    } finally {
-      isSending = false;
-      sendBtn.disabled = false;
-      sendBtn.style.opacity = '';
-      const chat = document.getElementById('chatMessages');
-      chat.scrollTop = chat.scrollHeight;
+        console.error(error);
+        loadingMessage.textContent =
+            'ไม่สามารถเชื่อมต่อ Backend ได้: ' + error.message;
     }
-  }
 
-  // กด Enter เพื่อส่ง (ไม่ส่งระหว่างพิมพ์ด้วย IME)
-  document.getElementById('chatInput').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.isComposing) {
-      e.preventDefault();
-      sendMsg();
-    }
-  });
+    chat.scrollTop = chat.scrollHeight;
+}
+
 </script>
 </body>
 </html>

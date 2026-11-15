@@ -130,17 +130,111 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-function withTimeout(promise, ms) {
-    let timer;
-    const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => {
-            const err = new Error('AI request timed out');
-            err.code = 'AI_TIMEOUT';
-            reject(err);
-        }, ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+async function generateWithRetry(question, maxAttempts = 3) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const response = await ai.models.generateContent({
+                model: GEMINI_MODEL,
+                contents: question,
+                config: {
+                    systemInstruction: SYSTEM_PROMPT,
+                    httpOptions: {
+                        timeout: AI_TIMEOUT_MS
+                    }
+                }
+            });
+
+            return response;
+
+        } catch (error) {
+            const status = Number(error.status || error.code);
+            const retryable =
+                status === 429 ||
+                status === 503 ||
+                status >= 500 ||
+                error.code === 'AI_TIMEOUT';
+
+            console.error(
+                '[Gemini Error]',
+                'Attempt:', attempt,
+                'Status:', status || error.code
+            );
+
+            if (!retryable || attempt === maxAttempts) {
+                throw error;
+            }
+
+            const delay = Math.min(2000 * (2 ** (attempt - 1)), 8000);
+            await sleep(delay);
+        }
+    }
+}
+
+app.post('/api/questions', questionLimiter, async (req, res) => {
+    const question = req.body && req.body.question_text;
+
+    if (typeof question !== 'string' || !question.trim()) {
+        return res.status(400).json({ error: 'กรุณากรอกคำถาม' });
+    }
+
+    if (question.length > MAX_QUESTION_LENGTH) {
+        return res.status(400).json({
+            error: `คำถามยาวเกินไป (สูงสุด ${MAX_QUESTION_LENGTH} ตัวอักษร)`
+        });
+    }
+
+    if (!ai) {
+        return res.status(500).json({
+            error: 'ระบบ AI ยังไม่ได้ตั้งค่า'
+        });
+    }
+
+    try {
+        const response = await generateWithRetry(question.trim());
+        const answer = response.text;
+
+        if (!answer) {
+            return res.status(502).json({
+                error: 'AI ไม่สามารถสร้างคำตอบได้'
+            });
+        }
+
+        return res.json({
+            status: 'success',
+            question_id: crypto.randomUUID(),
+            answer_id: crypto.randomUUID(),
+            answer_text: answer,
+            citations: []
+        });
+
+    } catch (error) {
+        const status = Number(error.status || error.code);
+
+        if (status === 503 || status === 429 || status >= 500) {
+            return res.status(503).json({
+                error: 'บริการ AI ไม่พร้อมใช้งานในขณะนี้ กรุณาลองใหม่ภายหลัง'
+            });
+        }
+
+        if (error.code === 'AI_TIMEOUT') {
+            return res.status(504).json({
+                error: 'AI ตอบช้าเกินไป กรุณาลองใหม่อีกครั้ง'
+            });
+        }
+
+        console.error('[Gemini Error]', status || 'UNKNOWN', error.message);
+
+        return res.status(500).json({
+            error: 'ไม่สามารถเชื่อมต่อ Gemini AI ได้ กรุณาตรวจสอบการตั้งค่า'
+        });
+    }
+});
+
 
 // API สำหรับรับคำถามและส่งไปยัง Gemini (path และรูปแบบ JSON เดิม)
 app.post('/api/questions', questionLimiter, async (req, res) => {
@@ -212,14 +306,7 @@ app.use((err, req, res, next) => {
 // ---------------------------------------------------------------------
 // เปิด Server + ปิดอย่างเรียบร้อย
 // ---------------------------------------------------------------------
-const server = app.listen(PORT, (err) => {
-    if (err) {
-        console.error(`เปิดเซิร์ฟเวอร์ที่พอร์ต ${PORT} ไม่ได้:`, err.code || err.message);
-        if (err.code === 'EADDRINUSE') {
-            console.error('พอร์ตนี้มีโปรแกรมอื่นใช้อยู่ ลองปิดตัวเก่า หรือรันด้วย PORT=3001 npm start');
-        }
-        process.exit(1);
-    }
+const server = app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
     console.log(`Model: ${GEMINI_MODEL} | Environment: ${IS_PROD ? 'production' : 'development'}`);
 });
