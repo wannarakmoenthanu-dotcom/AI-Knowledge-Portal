@@ -212,7 +212,14 @@ app.use((err, req, res, next) => {
 // ---------------------------------------------------------------------
 // เปิด Server + ปิดอย่างเรียบร้อย
 // ---------------------------------------------------------------------
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, (err) => {
+    if (err) {
+        console.error(`เปิดเซิร์ฟเวอร์ที่พอร์ต ${PORT} ไม่ได้:`, err.code || err.message);
+        if (err.code === 'EADDRINUSE') {
+            console.error('พอร์ตนี้มีโปรแกรมอื่นใช้อยู่ ลองปิดตัวเก่า หรือรันด้วย PORT=3001 npm start');
+        }
+        process.exit(1);
+    }
     console.log(`Server running at http://localhost:${PORT}`);
     console.log(`Model: ${GEMINI_MODEL} | Environment: ${IS_PROD ? 'production' : 'development'}`);
 });
